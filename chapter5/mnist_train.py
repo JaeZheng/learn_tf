@@ -23,15 +23,33 @@ moving_average_rate = 0.99  # 滑动平均衰减率
 
 
 # 前向传播函数，给定输入张量和所有参数，计算网络的前向传播结果
-def inference(input_tensor, avg_class, weights1, biases1, weights2, biases2):
+def inference(input_tensor, avg_class, reuse=False):
     # 如果没有提供滑动平均类，则直接使用当前参数的值
     if avg_class is None:
+        with tf.variable_scope("layer1", reuse=reuse):
+            weights1 = tf.get_variable("w1", [input_node, layer1_node],
+                                       initializer=tf.truncated_normal_initializer(stddev=0.1))
+            biases1 = tf.get_variable("b1", [layer1_node], initializer=tf.constant_initializer(0.1))
         layer1 = tf.nn.relu(tf.matmul(input_tensor, weights1) + biases1)
-        return tf.matmul(layer1, weights2) + biases2
+        with tf.variable_scope("layer2", reuse=reuse):
+            weights2 = tf.get_variable("w2", [layer1_node, output_node],
+                                       initializer=tf.truncated_normal_initializer(stddev=0.1))
+            biases2 = tf.get_variable("b2", [output_node], initializer=tf.constant_initializer(0.1))
+        layer2 = tf.matmul(layer1, weights2) + biases2
+        return layer2
     else:
         # 使用滑动平均类先计算变量的滑动平均值
+        with tf.variable_scope("layer1", reuse=reuse):
+            weights1 = tf.get_variable("w1", [input_node, layer1_node],
+                                       initializer=tf.truncated_normal_initializer(stddev=0.1))
+            biases1 = tf.get_variable("b1", [layer1_node], initializer=tf.constant_initializer(0.1))
         layer1 = tf.nn.relu(tf.matmul(input_tensor, avg_class.average(weights1)) + avg_class.average(biases1))
-        return tf.matmul(layer1, avg_class.average(weights2)) + avg_class.average(biases2)
+        with tf.variable_scope("layer2", reuse=reuse):
+            weights2 = tf.get_variable("w2", [layer1_node, output_node],
+                                       initializer=tf.truncated_normal_initializer(stddev=0.1))
+            biases2 = tf.get_variable("b2", [output_node], initializer=tf.constant_initializer(0.1))
+        layer2 = tf.matmul(layer1, avg_class.average(weights2)) + avg_class.average(biases2)
+        return layer2
 
 
 # 训练过程函数
@@ -39,16 +57,20 @@ def train(mnist):
     x = tf.placeholder(tf.float32, [None, input_node], name="x_input")
     y_true = tf.placeholder(tf.float32, [None, output_node], name="y_true")
 
-    # 隐层参数
-    weights1 = tf.Variable(tf.truncated_normal([input_node, layer1_node], stddev=0.1, name="w1"))
-    biases1 = tf.Variable(tf.constant(0.1, shape=[layer1_node]), name="b1")
-
-    # 输出层参数
-    weights2 = tf.Variable(tf.truncated_normal([layer1_node, output_node], stddev=0.1, name="w2"))
-    biases2 = tf.Variable(tf.constant(0.1, shape=[output_node], name="b2"))
+    # # 隐层参数
+    # with tf.variable_scope("layer1", reuse=True):
+    #     weights1 = tf.get_variable("w1", [input_node, layer1_node],
+    #                                initializer=tf.truncated_normal_initializer(stddev=0.1))
+    #     biases1 = tf.get_variable("b1", [layer1_node], initializer=tf.constant_initializer(0.1))
+    #
+    # # 输出层参数
+    # with tf.variable_scope("layer2", reuse=True):
+    #     weights2 = tf.get_variable("w2", [layer1_node, output_node],
+    #                                initializer=tf.truncated_normal_initializer(stddev=0.1))
+    #     biases2 = tf.get_variable("b2", [output_node], initializer=tf.constant_initializer(0.1))
 
     # 计算前向传播
-    y = inference(x, None, weights1, biases1, weights2, biases2)
+    y = inference(x, None)
 
     # 定义存储训练轮数的变量。这个变量不需要计算滑动平均值。指定为不可训练(trainable=False)
     global_step = tf.Variable(0, trainable=False)
@@ -60,7 +82,7 @@ def train(mnist):
     variable_averages_op = variable_averages.apply(tf.trainable_variables())
 
     # 计算使用了滑动平均之后的前向传播结果
-    average_y = inference(x, variable_averages, weights1, biases1, weights2, biases2)
+    average_y = inference(x, variable_averages, True)
 
     # 计算交叉熵损失函数
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y, labels=tf.arg_max(y_true, 1))
@@ -70,6 +92,10 @@ def train(mnist):
 
     # 计算L2正则化损失函数
     regularizer = tf.contrib.layers.l2_regularizer(regularization_rate)
+    with tf.variable_scope("layer1", reuse=True):
+        weights1 = tf.get_variable("w1", [input_node, layer1_node])
+    with tf.variable_scope("layer2", reuse=True):
+        weights2 = tf.get_variable("w2", [layer1_node, output_node])
     regularization = regularizer(weights1) + regularizer(weights2)
     # 总的损失函数
     loss = cross_entropy_mean + regularization
