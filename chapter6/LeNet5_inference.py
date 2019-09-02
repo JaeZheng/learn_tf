@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Author  : JaeZheng
 # @Time    : 2019/9/1 11:12
-# @File    : mnist_inference.py
+# @File    : LeNet5_inference.py
 
 """
 一个类似LeNet-5的卷积神经网络模型
@@ -14,7 +14,9 @@ import tensorflow as tf
 image_size = 28
 num_of_channels = 1
 num_of_labels = 10
+
 input_node = 784
+output_node = 10
 
 # 第一层卷积层的尺寸和深度
 conv1_deep = 32

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # @Author  : JaeZheng
 # @Time    : 2019/8/30 15:26
-# @File    : mnist_train.py
+# @File    : LeNet5_train.py
 
 import os
 import tensorflow as tf
@@ -10,11 +10,11 @@ import numpy as np
 from tensorflow.examples.tutorials.mnist import input_data
 import datetime
 # 加载mnist_inference.py中定义的常量和前向传播的函数
-from chapter6 import mnist_inference
+from chapter6 import LeNet5_inference
 
 # 配置神经网络训练的超参数
 batch_size = 100
-learning_rate_base = 0.8  # 基础学习率
+learning_rate_base = 0.1  # 基础学习率
 learning_rate_decay = 0.99  # 学习率的衰减率
 regularization_rate = 0.0001  # 正则化项在损失函数中的系数
 training_steps = 30000
@@ -27,17 +27,17 @@ model_name = "mnist_model.ckpt"
 
 # 训练过程函数
 def train(mnist):
-    x = tf.placeholder(tf.float32, [None, mnist_inference.image_size**2], name="x_input")
+    x = tf.placeholder(tf.float32, [None, LeNet5_inference.input_node], name="x_input")
     reshaped_x = tf.reshape(x,
                             [-1,
-                             mnist_inference.image_size,
-                             mnist_inference.image_size,
-                             mnist_inference.num_of_channels])
-    y_true = tf.placeholder(tf.float32, [None, mnist_inference.num_of_labels], name="y_true")
+                             LeNet5_inference.image_size,
+                             LeNet5_inference.image_size,
+                             LeNet5_inference.num_of_channels])
+    y_true = tf.placeholder(tf.float32, [None, LeNet5_inference.output_node], name="y_true")
     regularizer = tf.contrib.layers.l2_regularizer(regularization_rate)
 
     # 计算前向传播
-    y = mnist_inference.inference(reshaped_x, True, regularizer)
+    y = LeNet5_inference.inference(reshaped_x, True, regularizer)
 
     # 定义存储训练轮数的变量。这个变量不需要计算滑动平均值。指定为不可训练(trainable=False)
     global_step = tf.Variable(0, trainable=False)
