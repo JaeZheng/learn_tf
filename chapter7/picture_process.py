@@ -46,5 +46,44 @@ def image_resize():
     plt.show()
 
 
+def image_flip():
+    # 图像翻转
+    img_data = tf.image.decode_jpeg(image_raw_data)
+    flipped = tf.image.flip_up_down(img_data)  # 上下翻转
+    flipped = tf.image.flip_left_right(img_data)  # 左右翻转
+    # flipped = tf.image.random_flip_up_down(img_data)  # 随机上下翻转
+    # flipped = tf.image.random_flip_left_right(img_data)  # 随机左右翻转
+    plt.imshow(flipped.eval())
+    plt.show()
+    transposed = tf.image.transpose_image(img_data)  # 对角线翻转
+    plt.imshow(transposed.eval())
+    plt.show()
+
+
+def image_color():
+    # 图像色彩调整
+    img_data = tf.image.decode_jpeg(image_raw_data)
+    img_data = tf.image.convert_image_dtype(img_data, dtype=tf.float32)
+    # adjusted = tf.image.adjust_brightness(img_data, -0.5)  # 图像亮度-0.5
+    # adjusted = tf.clip_by_value(adjusted, 0.0, 1.0)  # 截断在一定范围内
+    # plt.imshow(adjusted.eval())
+    # plt.show()
+    # adjusted = tf.image.adjust_brightness(img_data, 0.5)  # 图像亮度+0.5
+    # adjusted = tf.clip_by_value(adjusted, 0.0, 1.0)  # 截断在一定范围内
+    # plt.imshow(adjusted.eval())
+    # plt.show()
+    # # 在[-max_delta, max_delta]范围内随机调整图像的亮度
+    # max_delta = 0.2
+    # adjusted = tf.image.random_brightness(img_data, max_delta)
+    # plt.imshow(adjusted.eval())
+    # plt.show()
+    # 将图像对比度减少到0.5倍
+    # adjusted = tf.image.adjust_contrast(img_data, 0.5)
+    # 将图像的对比度增加5倍
+    adjusted = tf.image.adjust_contrast(img_data, 5)
+    plt.imshow(adjusted.eval())
+    plt.show()
+
+
 with tf.Session() as sess:
-    image_resize()
+    image_color()
