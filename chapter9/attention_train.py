@@ -60,7 +60,7 @@ def MakeSrcTrgDataset(src_path, trg_path, batch_size):
 
 SRC_TRAIN_DATA = "./data/train.en"
 TRG_TRAIN_DATA = "./data/train.zh"
-CHECKPOINT_PATH = "./model/seq2seq/seq2seq_ckpt"
+CHECKPOINT_PATH = "./model/attention/attention_ckpt"
 HIDDEN_SIZE = 1024               # LSTM的隐藏层节点数量
 NUM_LAYERS = 2                   # 深层循环神经网络中LSTM结构的层数
 SRC_VOCAB_SIZE = 10000           # 源语言词汇表大小
@@ -75,9 +75,8 @@ SHARE_EMB_AND_SOFTMAX = True
 class NMTModel(object):
     def __init__(self):
         # 定义编码器和解码器所使用的LSTM结构
-        self.enc_cell = tf.nn.rnn_cell.MultiRNNCell(
-            [tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE) for _ in range(NUM_LAYERS)]
-        )
+        self.enc_cell_fw = tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE)
+        self.enc_cell_bw = tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE)
         self.dec_cell = tf.nn.rnn_cell.MultiRNNCell(
             [tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE) for _ in range(NUM_LAYERS)]
         )
@@ -98,12 +97,26 @@ class NMTModel(object):
         src_emb = tf.nn.embedding_lookup(self.src_embedding, src_input)
         trg_emb = tf.nn.embedding_lookup(self.trg_embedding, trg_input)
 
-        # 使用dynamic_rnn构造编码器
+        # 使用bidirectional_dynamic_rnn构造编码器
         with tf.variable_scope("encoder"):
-            enc_outputs, enc_state = tf.nn.dynamic_rnn(self.enc_cell, src_emb, src_size, dtype=tf.float32)
+            enc_outputs, enc_state = tf.nn.bidirectional_dynamic_rnn(
+                self.enc_cell_fw, self.enc_cell_bw, src_emb, src_size, dtype=tf.float32)
+            # 将两个LSTM的输出拼接为一个张量
+            enc_outputs = tf.concat([enc_outputs[0], enc_outputs[1]], -1)
         # 构造解码器, 第一步的隐藏状态为编码器最后一层的隐藏状态
         with tf.variable_scope("decoder"):
-            dec_outputs, _ = tf.nn.dynamic_rnn(self.dec_cell, trg_emb, trg_size, initial_state=enc_state)
+            # 选择注意力权重的计算模型。
+            attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
+                HIDDEN_SIZE, enc_outputs,
+                memory_sequence_length=src_size
+            )
+            # 将解码器的循环神经网络self.dec_cell和注意力一起封装成更高层的循环神经网络
+            attention_cell = tf.contrib.seq2seq.AttentionWrapper(
+                self.dec_cell, attention_mechanism,
+                attention_layer_size=HIDDEN_SIZE
+            )
+            # 使用attention_cell和dynamic_rnn构造编码器
+            dec_outputs, _ = tf.nn.dynamic_rnn(attention_cell, trg_emb, trg_size, dtype=tf.float32)
 
         # 计算器解码器每一步的perplexity
         output = tf.reshape(dec_outputs, [-1, HIDDEN_SIZE])
@@ -143,7 +156,7 @@ def run_epoch(session, cost_op, train_op, saver, step):
 def main():
     initializer = tf.random_uniform_initializer()
 
-    with tf.variable_scope("mmt_model", reuse=None, initializer=initializer):
+    with tf.variable_scope("nmt_model", reuse=None, initializer=initializer):
         train_model = NMTModel()
 
     data = MakeSrcTrgDataset(SRC_TRAIN_DATA, TRG_TRAIN_DATA, BATCH_SIZE)

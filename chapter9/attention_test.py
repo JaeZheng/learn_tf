@@ -7,7 +7,7 @@
 import tensorflow as tf
 import codecs
 
-CHECKPOINT_PATH = "./model/seq2seq/seq2seq_ckpt-9000"
+CHECKPOINT_PATH = "./model/attention/attention_ckpt-9000"
 SRC_VOCAB_FILE = "./data/en.vocab"
 TRG_VOCAB_FILE = "./data/zh.vocab"
 
@@ -24,9 +24,8 @@ EOS_ID = 2
 class NMTModel(object):
     def __init__(self):
         # 定义编码器和解码器所使用的LSTM结构
-        self.enc_cell = tf.nn.rnn_cell.MultiRNNCell(
-            [tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE) for _ in range(NUM_LAYERS)]
-        )
+        self.enc_cell_fw = tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE)
+        self.enc_cell_bw = tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE)
         self.dec_cell = tf.nn.rnn_cell.MultiRNNCell(
             [tf.nn.rnn_cell.BasicLSTMCell(HIDDEN_SIZE) for _ in range(NUM_LAYERS)]
         )
@@ -45,19 +44,35 @@ class NMTModel(object):
         src_input = tf.convert_to_tensor([src_input], dtype=tf.int32)
         src_emb = tf.nn.embedding_lookup(self.src_embedding, src_input)
 
-        # 使用dynamic_rnn构造编码器,这一步与训练时相同
+        # 使用bidirectional_dynamic_rnn构造编码器
         with tf.variable_scope("encoder"):
-            enc_outputs, enc_state = tf.nn.dynamic_rnn(self.enc_cell, src_emb, src_size, dtype=tf.float32)
+            enc_outputs, enc_state = tf.nn.bidirectional_dynamic_rnn(
+                self.enc_cell_fw, self.enc_cell_bw, src_emb, src_size, dtype=tf.float32)
+            # 将两个LSTM的输出拼接为一个张量
+            enc_outputs = tf.concat([enc_outputs[0], enc_outputs[1]], -1)
+
+        # 构造解码器, 第一步的隐藏状态为编码器最后一层的隐藏状态
+        with tf.variable_scope("decoder"):
+            # 选择注意力权重的计算模型。
+            attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(
+                HIDDEN_SIZE, enc_outputs,
+                memory_sequence_length=src_size
+            )
+            # 将解码器的循环神经网络self.dec_cell和注意力一起封装成更高层的循环神经网络
+            attention_cell = tf.contrib.seq2seq.AttentionWrapper(
+                self.dec_cell, attention_mechanism,
+                attention_layer_size=HIDDEN_SIZE
+            )
         # 设置解码的最大步数，防止无限循环
         MAX_DEC_LEN = 100
 
-        with tf.variable_scope("decoder/rnn/multi_rnn_cell"):
+        with tf.variable_scope("decoder/rnn/attention_wrapper"):
             # 使用一个变长的TensorArray来存储生成的句子
             init_array = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True, clear_after_read=False)
             # 填入第一个词<SOS>作为解码器的输入
             init_array = init_array.write(0, SOS_ID)
             # 构建初始的循环状态。
-            init_loop_var = (enc_state, init_array, 0)
+            init_loop_var = (attention_cell.zero_state(batch_size=1, dtype=tf.float32), init_array, 0)
 
             # tf.while_loop的循环条件
             def continue_loop_condition(state, trg_ids, step):
@@ -69,8 +84,8 @@ class NMTModel(object):
             def loop_body(state, trg_ids, step):
                 trg_input = [trg_ids.read(step)]
                 trg_emb = tf.nn.embedding_lookup(self.trg_embedding, trg_input)
-                # 这里不是用dynamic_rnn, 而是直接调用dec_cell向前计算一步
-                dec_outputs, next_state = self.dec_cell.call(state=state, inputs=trg_emb)
+                # 这里不是用dynamic_rnn, 而是直接调用attention_cell向前计算一步
+                dec_outputs, next_state = attention_cell.call(state=state, inputs=trg_emb)
                 # 计算每个可能输出的单词对应的logit，并选取logit最大的单词作为这一步的输出
                 output = tf.reshape(dec_outputs, [-1, HIDDEN_SIZE])
                 logits = (tf.matmul(output, self.softmax_weight) + self.softmax_bias)
@@ -106,10 +121,10 @@ def get_word_sequence(sentence, vocab_file):
 
 
 def main():
-    with tf.variable_scope("mmt_model", reuse=None):
+    with tf.variable_scope("nmt_model", reuse=None):
         model = NMTModel()
     # test_sentence = [90, 13, 9, 689, 4, 2]
-    test_sentence = "This is a test ."
+    test_sentence = "I am a test ."
     test_sentence = get_word_sequence(test_sentence, SRC_VOCAB_FILE)
     print(test_sentence)
     src_sentence = get_sentence(test_sentence, SRC_VOCAB_FILE)
